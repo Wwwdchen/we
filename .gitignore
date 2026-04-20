@@ -1,0 +1,15 @@
+*.swp
+*.swo
+*.o
+*.bin
+*.dump
+*.elf
+*.pyc
+__pycache__/
+*.log
+*.daidir/
+vcs_out/
+runs/
+Debug/
+work/
+.DS_Store
