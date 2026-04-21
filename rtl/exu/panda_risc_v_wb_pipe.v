@@ -155,45 +155,30 @@ module panda_risc_v_wb_pipe #(
     reg pipe_div_wbk_valid;
 
     wire alu_csr_input_valid;
-    wire upstream_bundle_valid;
-    wire clear_pst;
-    wire clear_alu_csr;
-    wire clear_lsu;
-    wire clear_mul;
-    wire clear_div;
-    wire bundle_drained;
-    wire accept_new_bundle;
+    wire pipe_pst_alu_busy;
+    wire pipe_pst_alu_drained;
+    wire accept_pst_alu;
+    wire accept_lsu;
+    wire accept_mul;
+    wire accept_div;
 
     assign alu_csr_input_valid =
         s_alu_csr_wbk_valid & ((~s_pst_res_inst_cmt) | s_pst_res_need_imdt_wbk);
 
-    assign upstream_bundle_valid =
-        s_pst_res_valid |
-        alu_csr_input_valid |
-        s_lsu_wbk_valid |
-        s_mul_wbk_valid |
-        s_div_wbk_valid;
+    assign pipe_pst_alu_busy = pipe_pst_res_valid | pipe_alu_csr_wbk_valid;
+    assign pipe_pst_alu_drained =
+        ((~pipe_pst_res_valid) | m_pst_res_ready) &
+        ((~pipe_alu_csr_wbk_valid) | m_alu_csr_wbk_ready);
+    assign accept_pst_alu = (~pipe_pst_alu_busy) | pipe_pst_alu_drained;
+    assign accept_lsu = (~pipe_lsu_wbk_valid) | (pipe_lsu_wbk_valid & m_lsu_wbk_ready);
+    assign accept_mul = (~pipe_mul_wbk_valid) | (pipe_mul_wbk_valid & m_mul_wbk_ready);
+    assign accept_div = (~pipe_div_wbk_valid) | (pipe_div_wbk_valid & m_div_wbk_ready);
 
-    assign clear_pst = pipe_pst_res_valid & m_pst_res_ready;
-    assign clear_alu_csr = pipe_alu_csr_wbk_valid & m_alu_csr_wbk_ready;
-    assign clear_lsu = pipe_lsu_wbk_valid & m_lsu_wbk_ready;
-    assign clear_mul = pipe_mul_wbk_valid & m_mul_wbk_ready;
-    assign clear_div = pipe_div_wbk_valid & m_div_wbk_ready;
-
-    assign bundle_drained =
-        (~pipe_pst_res_valid | clear_pst) &
-        (~pipe_alu_csr_wbk_valid | clear_alu_csr) &
-        (~pipe_lsu_wbk_valid | clear_lsu) &
-        (~pipe_mul_wbk_valid | clear_mul) &
-        (~pipe_div_wbk_valid | clear_div);
-
-    assign accept_new_bundle = bundle_drained;
-
-    assign s_pst_res_ready = accept_new_bundle;
-    assign s_alu_csr_wbk_ready = accept_new_bundle;
-    assign s_lsu_wbk_ready = accept_new_bundle;
-    assign s_mul_wbk_ready = accept_new_bundle;
-    assign s_div_wbk_ready = accept_new_bundle;
+    assign s_pst_res_ready = accept_pst_alu;
+    assign s_alu_csr_wbk_ready = accept_pst_alu;
+    assign s_lsu_wbk_ready = accept_lsu;
+    assign s_mul_wbk_ready = accept_mul;
+    assign s_div_wbk_ready = accept_div;
 
     always @(posedge clk or negedge resetn)
     begin
@@ -207,28 +192,26 @@ module panda_risc_v_wb_pipe #(
         end
         else
         begin
-            if(accept_new_bundle)
+            if(accept_pst_alu)
             begin
                 pipe_pst_res_valid <= # simulation_delay s_pst_res_valid;
                 pipe_alu_csr_wbk_valid <= # simulation_delay alu_csr_input_valid;
+            end
+
+            if(accept_lsu)
                 pipe_lsu_wbk_valid <= # simulation_delay s_lsu_wbk_valid;
+
+            if(accept_mul)
                 pipe_mul_wbk_valid <= # simulation_delay s_mul_wbk_valid;
+
+            if(accept_div)
                 pipe_div_wbk_valid <= # simulation_delay s_div_wbk_valid;
-            end
-            else if(bundle_drained)
-            begin
-                pipe_pst_res_valid <= # simulation_delay 1'b0;
-                pipe_alu_csr_wbk_valid <= # simulation_delay 1'b0;
-                pipe_lsu_wbk_valid <= # simulation_delay 1'b0;
-                pipe_mul_wbk_valid <= # simulation_delay 1'b0;
-                pipe_div_wbk_valid <= # simulation_delay 1'b0;
-            end
         end
     end
 
     always @(posedge clk)
     begin
-        if(accept_new_bundle & upstream_bundle_valid)
+        if(accept_pst_alu & (s_pst_res_valid | alu_csr_input_valid))
         begin
             pipe_pst_res_inst_cmt <= # simulation_delay s_pst_res_inst_cmt;
             pipe_pst_res_need_imdt_wbk <= # simulation_delay s_pst_res_need_imdt_wbk;
@@ -241,18 +224,27 @@ module panda_risc_v_wb_pipe #(
             pipe_alu_csr_wbk_rd_vld <= # simulation_delay s_alu_csr_wbk_rd_vld;
             pipe_alu_csr_wbk_csr_rw_inst_id <= # simulation_delay s_alu_csr_wbk_csr_rw_inst_id;
             pipe_alu_csr_wbk_alu_inst_id <= # simulation_delay s_alu_csr_wbk_alu_inst_id;
+        end
 
+        if(accept_lsu & s_lsu_wbk_valid)
+        begin
             pipe_lsu_wbk_ls_sel <= # simulation_delay s_lsu_wbk_ls_sel;
             pipe_lsu_wbk_rd_id_for_ld <= # simulation_delay s_lsu_wbk_rd_id_for_ld;
             pipe_lsu_wbk_dout <= # simulation_delay s_lsu_wbk_dout;
             pipe_lsu_wbk_ls_addr <= # simulation_delay s_lsu_wbk_ls_addr;
             pipe_lsu_wbk_err <= # simulation_delay s_lsu_wbk_err;
             pipe_lsu_wbk_inst_id <= # simulation_delay s_lsu_wbk_inst_id;
+        end
 
+        if(accept_mul & s_mul_wbk_valid)
+        begin
             pipe_mul_wbk_data <= # simulation_delay s_mul_wbk_data;
             pipe_mul_wbk_rd_id <= # simulation_delay s_mul_wbk_rd_id;
             pipe_mul_wbk_inst_id <= # simulation_delay s_mul_wbk_inst_id;
+        end
 
+        if(accept_div & s_div_wbk_valid)
+        begin
             pipe_div_wbk_data <= # simulation_delay s_div_wbk_data;
             pipe_div_wbk_rd_id <= # simulation_delay s_div_wbk_rd_id;
             pipe_div_wbk_inst_id <= # simulation_delay s_div_wbk_inst_id;
